@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "podshare",
-      "source": "./",
+      "source": "./plugin",
       "description": "Share this chat, with the files it used, as an encrypted pod a teammate can resume in Claude Code or Codex."
     }
   ]
