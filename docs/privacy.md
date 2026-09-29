@@ -53,6 +53,9 @@ pre-approve tools (`allowed-tools` is removed).
 
 The code works once. Your pod is encrypted end to end: it goes directly to the other
 person when it can, otherwise through the public Magic Wormhole relay, which can't read it.
+The relay does see what any internet service sees: both of your IP addresses, when you sent,
+and roughly how big the pod was. Someone trying to guess your code gets one try, and a wrong
+guess ends the transfer for both of you.
 
 ## Opening a pod from someone else
 
