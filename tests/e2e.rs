@@ -355,7 +355,7 @@ fn a_taken_folder_gets_a_new_name_instead_of_failing() {
 }
 
 #[test]
-fn skills_the_chat_used_go_along_only_if_the_sender_agrees() {
+fn skills_the_chat_used_go_along_unless_the_sender_says_no() {
     let sb = Sandbox::new("skills-used");
     let project = sb.project("app", "src/main.rs", "fn main() {}\n");
     let skill = sb.home.join(".claude/skills/deploy");
@@ -372,12 +372,13 @@ fn skills_the_chat_used_go_along_only_if_the_sender_agrees() {
     body.push('\n');
     fs::write(&session, body).unwrap();
 
-    let plan = sb.run(&project, &["pack", "--yes", "--dry-run", "--agent", "claude-code"]);
-    assert!(plan.contains("from your own setup: deploy (not included)"), "{plan}");
+    let plan = sb.run(&project, &["pack", "--yes", "--dry-run", "--agent", "claude-code", "--no-skills"]);
+    assert!(plan.contains("from your own setup: deploy (left out"), "{plan}");
     assert!(!plan.contains("+ .claude/skills/deploy") && !plan.contains("+ .claude\\skills\\deploy"), "{plan}");
 
     let pod = sb.root.join("s.pod");
-    let packed = sb.run(&project, &["pack", "--yes", "--agent", "claude-code", "--allow", "personal-skills", "-o", pod.to_str().unwrap()]);
+    let packed = sb.run(&project, &["pack", "--yes", "--agent", "claude-code", "-o", pod.to_str().unwrap()]);
+    assert!(packed.contains("from your own setup: deploy (included"), "{packed}");
     let line = packed.lines().find_map(|l| l.trim().strip_prefix("podshare open ")).unwrap().trim_matches('\'').to_string();
     let friend = sb.root.join("friend");
     fs::create_dir_all(&friend).unwrap();

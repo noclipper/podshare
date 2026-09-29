@@ -45,6 +45,9 @@ enum Cli {
         /// Leave a project file out (path relative to the project); repeat for several
         #[arg(long, value_name = "PATH")]
         exclude: Vec<PathBuf>,
+        /// Don't send the skills the chat used from your own setup (the project's still go)
+        #[arg(long)]
+        no_skills: bool,
         /// Skip the confirmation prompt
         #[arg(short, long)]
         yes: bool,
@@ -63,6 +66,9 @@ enum Cli {
         /// Leave a project file out (path relative to the project); repeat for several
         #[arg(long, value_name = "PATH")]
         exclude: Vec<PathBuf>,
+        /// Don't send the skills the chat used from your own setup (the project's still go)
+        #[arg(long)]
+        no_skills: bool,
         /// Show what would be sent, then stop
         #[arg(long)]
         dry_run: bool,
@@ -138,14 +144,16 @@ fn run() -> Result<()> {
         "can't find your home folder: set HOME (or USERPROFILE on Windows)"
     );
     match Cli::parse() {
-        Cli::Pack { session, agent, out, allow, exclude, dry_run, yes } => {
+        Cli::Pack { session, agent, out, allow, exclude, no_skills, dry_run, yes } => {
             let mut filters = Filters::new(allow);
             filters.excluded.extend(exclude);
+            filters.no_skills = no_skills;
             share(session, agent, if dry_run { Dest::Nowhere } else { Dest::File(out) }, filters, yes)
         }
-        Cli::Send { session, agent, allow, exclude, dry_run, yes } => {
+        Cli::Send { session, agent, allow, exclude, no_skills, dry_run, yes } => {
             let mut filters = Filters::new(allow);
             filters.excluded.extend(exclude);
+            filters.no_skills = no_skills;
             share(session, agent, if dry_run { Dest::Nowhere } else { Dest::Wormhole }, filters, yes)
         }
         Cli::Receive { code, into, agent, yes, no_launch } => {
@@ -695,7 +703,8 @@ fn plan(agent: Agent, path: &Path, cwd: &Path, root: &Path, home: &Path, identit
         }
     }
     // Skills the chat used from outside the project: the sender's own, or a plugin's.
-    // Offered, and sent only if the sender says so, as project skills on the other side.
+    // They go along (the summary names them; `c` or --no-skills leaves them out) and land
+    // as project skills on the other side.
     let have: BTreeSet<String> = skills.iter().filter_map(|r| r.iter().nth(2).map(|n| n.to_string_lossy().into_owned())).collect();
     let mut outside_skills = Vec::new();
     for dir in used_skills.iter().filter(|d| !under(d, root)) {
@@ -705,12 +714,15 @@ fn plan(agent: Agent, path: &Path, cwd: &Path, root: &Path, home: &Path, identit
             continue;
         }
         outside_skills.push(name.clone());
-        if filters.on(Filter::PersonalSkills) {
+        if filters.no_skills {
             continue;
         }
         for file in walk(dir) {
             let rel = Path::new(".claude/skills").join(&name).join(file.strip_prefix(dir).unwrap_or(&file));
             let shown = format!("skill {name}: {}", file.strip_prefix(dir).unwrap_or(&file).display());
+            if filters.excluded.contains(&rel) {
+                continue;
+            }
             let bytes = match fs::metadata(&file) {
                 _ if scan::credential_path(&file).is_some() => Err(Skip::Sensitive("secrets file".into())),
                 Ok(m) if m.len() > MAX_FILE => Err(Skip::TooBig),
@@ -856,7 +868,13 @@ fn print_plan(p: &Plan, filters: &Filters, doing: &str) {
         p.files.keys().for_each(|r| println!("      {}", plain(&r.display().to_string())));
     }
     if !p.instructions.is_empty() || !p.skills.is_empty() {
-        println!("      incl. {} and {} that steer the agent", count(p.instructions.len(), "instruction file"), count(p.skills.len(), "skill file"));
+        let parts: Vec<String> = [(p.instructions.len(), "instruction file"), (p.skills.len(), "skill file")]
+            .into_iter()
+            .filter(|(n, _)| *n > 0)
+            .map(|(n, what)| count(n, what))
+            .collect();
+        let verb = if p.instructions.len() + p.skills.len() == 1 { "steers" } else { "steer" };
+        println!("      incl. {} that {verb} the agent", parts.join(" and "));
     }
     if p.tokens > HUGE {
         println!("  ! that's more than any agent can load at once; the receiver won't be able to resume it as it is");
@@ -887,8 +905,8 @@ fn print_plan(p: &Plan, filters: &Filters, doing: &str) {
         }
     }
     if !p.outside_skills.is_empty() {
-        let state = if filters.on(Filter::PersonalSkills) { "not included" } else { "included" };
-        println!("  · skills this chat used from your own setup: {} ({state})", list(&p.outside_skills));
+        let state = if filters.no_skills { "left out: --no-skills" } else { "included; c to untick" };
+        println!("  ✓ skills this chat used from your own setup: {} ({state})", list(&p.outside_skills));
     }
     let redacted: Vec<String> = p.files.values().filter(|f| f.redacted > 0).map(|f| f.rel.display().to_string()).collect();
     if !redacted.is_empty() {
@@ -1111,20 +1129,6 @@ fn share(session: Option<String>, agent: Option<Agent>, dest: Dest, mut filters:
         let question = format!("Include {} over 10 MB ({}: {})? They're still checked for secrets. [y/N]", count(large.len(), "file"), size(total), list(&names));
         if matches!(ask(&question)?.as_str(), "y" | "yes") {
             filters.toggle(Filter::LargeFiles);
-            p = plan(agent, &path, &cwd, &root, &home, &identity, &filters)?;
-            print_plan(&p, &filters, doing);
-        }
-    }
-    // Skills from the sender's own setup: ask, like large files.
-    if !yes && !p.outside_skills.is_empty() && filters.on(Filter::PersonalSkills) {
-        let question = format!(
-            "This chat used {} from your own setup ({}). Include {}? They're checked for secrets. [y/N]",
-            count(p.outside_skills.len(), "skill"),
-            list(&p.outside_skills),
-            if p.outside_skills.len() == 1 { "it" } else { "them" }
-        );
-        if matches!(ask(&question)?.as_str(), "y" | "yes") {
-            filters.toggle(Filter::PersonalSkills);
             p = plan(agent, &path, &cwd, &root, &home, &identity, &filters)?;
             print_plan(&p, &filters, doing);
         }

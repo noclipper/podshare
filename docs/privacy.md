@@ -15,8 +15,9 @@ A file is left out if it is:
 
 If a file only has a password like `password = …`, it's sent with that value blanked out.
 
-Skills the chat used from outside your project (your own, or a plugin's) are only sent if
-you say yes, and they get the same checks as project files.
+Skills the chat used from outside your project (your own, or a plugin's) are sent too, with
+the same checks as project files. They're listed before sending; untick them with `c`, or
+use `--no-skills`.
 
 ## The conversation
 
@@ -36,7 +37,7 @@ All of these are on to start with. Press `f` before sending to switch any of the
 
 `outside-project` · `personal-folders` · `credential-files` · `gitignored` ·
 `secret-scan` · `unchecked-commands` · `connected-tools` · `emails` · `identity` ·
-`pasted-images` · `large-files` · `personal-skills`
+`pasted-images` · `large-files`
 
 The person you send to is told if you switched any off.
 

@@ -25,14 +25,14 @@ Below, SESSION means the flags for your agent. Run the commands in the project f
    out first, or cancel. To leave files out, re-run the preview with
    `--exclude <path>` for each file and show it again. If files were left out for
    being over 10 MB, ask whether to include them; if yes, add `--allow large-files`.
-   If the preview lists "skills this chat used from your own setup … (not included)", ask
-   whether to send those skills too; if yes, add `--allow personal-skills`.
+   If the preview lists "skills this chat used from your own setup", mention that they go
+   along; if the user doesn't want that, add `--no-skills`.
 
 3. Send it. It needs the network and keeps running until the other person connects,
    so in Codex ask to run it with network access, and don't wait for it to finish:
 
    `podshare send SESSION --yes` plus any `--exclude`, `--allow large-files` or
-   `--allow personal-skills` flags.
+   `--no-skills` flags.
    In Claude Code, run it with `run_in_background: true`.
 
    As soon as the line `podshare receive <code>` appears, give the user that exact

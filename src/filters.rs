@@ -29,11 +29,9 @@ pub enum Filter {
     PastedImages,
     /// Leave out files over 10 MB (turn off to send them; they're still checked for secrets)
     LargeFiles,
-    /// Leave out skills the chat used from outside the project (your own or a plugin's)
-    PersonalSkills,
 }
 
-pub const ALL: [Filter; 12] = [
+pub const ALL: [Filter; 11] = [
     Filter::OutsideProject,
     Filter::PersonalFolders,
     Filter::CredentialFiles,
@@ -45,7 +43,6 @@ pub const ALL: [Filter; 12] = [
     Filter::Identity,
     Filter::PastedImages,
     Filter::LargeFiles,
-    Filter::PersonalSkills,
 ];
 
 impl Filter {
@@ -63,11 +60,13 @@ pub struct Filters {
     off: Vec<Filter>,
     /// Project files the sender unticked; they and every call that read them stay out.
     pub excluded: BTreeSet<PathBuf>,
+    /// Leave out the skills the chat used from outside the project (`--no-skills`).
+    pub no_skills: bool,
 }
 
 impl Filters {
     pub fn new(off: Vec<Filter>) -> Self {
-        Filters { off, excluded: BTreeSet::new() }
+        Filters { off, excluded: BTreeSet::new(), no_skills: false }
     }
 
     pub fn on(&self, f: Filter) -> bool {
