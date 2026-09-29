@@ -1,7 +1,7 @@
 {
   "name": "podshare",
   "description": "Share this session, with the files it used, as an encrypted pod someone else can resume — with secrets and personal data filtered out first.",
-  "version": "0.4.5",
+  "version": "0.5.0",
   "author": {
     "name": "noclipper"
   },

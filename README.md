@@ -2,7 +2,8 @@
 
 Send your coding-agent chat to someone else, so they can pick up where you left off.
 The conversation goes with **just the files that chat used**, not your whole project,
-plus your project's instructions (like `CLAUDE.md` or `AGENTS.md`). Everything is encrypted, and secrets and personal
+plus your project's instructions (like `CLAUDE.md` or `AGENTS.md`) and **the skills the chat
+used**, so the other agent works the same way. Everything is encrypted, and secrets and personal
 details podshare recognises are removed.
 
 Works with **Claude Code** and **Codex**, and a chat can move between them.
@@ -36,6 +37,8 @@ podshare send
 1. If you've had several chats in that folder, pick the one to send (arrow keys, Enter).
 2. You see what will go: the files, what's left out and why, and roughly how many tokens
    it is. Press `d` for the full report, `c` to untick files.
+   If the chat used skills from your own setup (not the project's), podshare asks whether
+   to send them too.
 3. Press `y`. You get a one-time code like `7-crossover-clockwork`.
 4. Send that code to the other person (Slack, text, anything).
 5. **Keep the terminal open** until they've received it. It says `✓ sent` when done.
@@ -107,6 +110,9 @@ The code works only once, and everything is encrypted end to end.
 
 - Only the files the chat used are sent, plus build files like `package.json` or
   `Cargo.toml` so the project runs. Not your whole project.
+- Skills go along too: the project's own (`.claude/skills`, `.agents/skills`) always, and
+  ones from your own setup or a plugin only if you say yes. They land where the other
+  person's agent looks, whichever agent that is. A received skill can't pre-approve tools.
 - The person you send to starts safely (plan mode in Claude Code, read-only in Codex),
   so it can read the files but changes nothing until they approve.
 - `--yes` skips the questions and sends your most recent chat.

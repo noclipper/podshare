@@ -278,6 +278,12 @@ fn check(path: &Path, root: &Path, home: &Path, filters: &Filters) -> Result<Sha
         Ok(_) => fs::read(&abs).map_err(|_| Skip::Missing)?,
         Err(_) => return Err(Skip::Missing),
     };
+    vet(rel, bytes, filters)
+}
+
+/// The content checks every shared file gets: key formats keep it out whole,
+/// `password = …` style secrets are redacted.
+fn vet(rel: PathBuf, bytes: Vec<u8>, filters: &Filters) -> Result<Shared, Skip> {
     if !filters.on(Filter::SecretScan) {
         return Ok(Shared { rel, bytes, redacted: 0 });
     }
@@ -553,6 +559,8 @@ struct Plan {
     left_out: BTreeMap<(String, String), usize>,
     instructions: Vec<PathBuf>,
     skills: Vec<PathBuf>,
+    /// Names of skills the chat used from outside the project.
+    outside_skills: Vec<String>,
     /// Shared files that mention the sender's home folder, identity or an email.
     /// They are shared as-is: rewriting someone's code would break it.
     personal: Vec<PathBuf>,
@@ -571,16 +579,20 @@ fn plan(agent: Agent, path: &Path, cwd: &Path, root: &Path, home: &Path, identit
     let mut echoes = BTreeSet::new(); // secret values seen in what was withheld
     let mut described: HashMap<String, String> = HashMap::new(); // tool call id → its line in `skipped`
     let mut briefly: BTreeMap<String, (String, String)> = BTreeMap::new(); // id → (what, why), for the summary
+    let mut used_skills = BTreeSet::new(); // skill folders the chat loaded
+    lines.iter().for_each(|l| skills_announced(l, &mut used_skills));
     for t in agent.touched(&lines) {
+        note_skills(&t, home, &mut used_skills);
         let mut culprit = None;
         if let Some(why) = judge(&t, root, home, filters, &mut files, &mut culprit) {
             let label = match culprit.as_ref().or(t.file.as_ref()) {
                 Some(f) => show(f, root, home),
                 None if t.tool.starts_with("mcp__") => CONNECTED.into(),
+                None if t.attachment => CONTEXT.into(),
                 None => COMMAND.into(),
             };
             match briefly.get(&t.id) {
-                Some((old, _)) if old != COMMAND => {}
+                Some((old, _)) if old != COMMAND && old != CONTEXT => {}
                 _ => {
                     briefly.insert(t.id.clone(), (plain(&label), why.clone()));
                 }
@@ -614,6 +626,7 @@ fn plan(agent: Agent, path: &Path, cwd: &Path, root: &Path, home: &Path, identit
         let sub_lines = session::load(&sub.transcript).unwrap_or_default();
         let mut reason = None;
         for t in agent.touched(&sub_lines) {
+            note_skills(&t, home, &mut used_skills);
             if let Some(why) = judge(&t, root, home, filters, &mut files, &mut None) {
                 if why.contains("sensitive") {
                     learn_secrets(&t, &mut echoes);
@@ -667,18 +680,53 @@ fn plan(agent: Agent, path: &Path, cwd: &Path, root: &Path, home: &Path, identit
     let folders = if folders.is_empty() { vec![root] } else { folders };
     let extras: Vec<PathBuf> = folders
         .iter()
-        .flat_map(|d| ["CLAUDE.md", "AGENTS.md"].map(|f| d.join(f)).into_iter().chain(walk(&d.join(".claude/skills"))))
+        .flat_map(|d| ["CLAUDE.md", "AGENTS.md"].map(|f| d.join(f)).into_iter().chain(walk(&d.join(".claude/skills"))).chain(walk(&d.join(".agents/skills"))))
         .collect();
     for p in extras {
         match check(&p, root, home, filters) {
             Ok(f) => {
-                if f.rel.starts_with(".claude") { &mut skills } else { &mut instructions }.push(f.rel.clone());
+                if f.rel.starts_with(".claude") || f.rel.starts_with(".agents") { &mut skills } else { &mut instructions }.push(f.rel.clone());
                 files.insert(f.rel.clone(), f);
             }
             Err(skip @ Skip::Sensitive(_)) => {
                 skipped.insert(show(&p, root, home), skip.reason());
             }
             Err(_) => {}
+        }
+    }
+    // Skills the chat used from outside the project: the sender's own, or a plugin's.
+    // Offered, and sent only if the sender says so, as project skills on the other side.
+    let have: BTreeSet<String> = skills.iter().filter_map(|r| r.iter().nth(2).map(|n| n.to_string_lossy().into_owned())).collect();
+    let mut outside_skills = Vec::new();
+    for dir in used_skills.iter().filter(|d| !under(d, root)) {
+        let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        // podshare's own share/receive skills are no use to the other person.
+        if name.is_empty() || have.contains(&name) || dir.components().any(|c| c.as_os_str() == "podshare") {
+            continue;
+        }
+        outside_skills.push(name.clone());
+        if filters.on(Filter::PersonalSkills) {
+            continue;
+        }
+        for file in walk(dir) {
+            let rel = Path::new(".claude/skills").join(&name).join(file.strip_prefix(dir).unwrap_or(&file));
+            let shown = format!("skill {name}: {}", file.strip_prefix(dir).unwrap_or(&file).display());
+            let bytes = match fs::metadata(&file) {
+                _ if scan::credential_path(&file).is_some() => Err(Skip::Sensitive("secrets file".into())),
+                Ok(m) if m.len() > MAX_FILE => Err(Skip::TooBig),
+                Ok(_) => fs::read(&file).map_err(|_| Skip::Missing),
+                Err(_) => Err(Skip::Missing),
+            };
+            match bytes.and_then(|b| vet(rel.clone(), b, filters)) {
+                Ok(f) => {
+                    skills.push(rel.clone());
+                    files.insert(rel, f);
+                }
+                Err(Skip::Missing) => {}
+                Err(skip) => {
+                    skipped.insert(shown, skip.reason());
+                }
+            }
         }
     }
     let personal = files.values().filter(|f| mentions_sender(&f.bytes, home, identity)).map(|f| f.rel.clone()).collect();
@@ -708,7 +756,36 @@ fn plan(agent: Agent, path: &Path, cwd: &Path, root: &Path, home: &Path, identit
             left_out.entry((brief(why).to_string(), what.clone())).or_insert(1);
         }
     }
-    Ok(Plan { files, skipped, left_out, instructions, skills, personal, cleaned, messages, tokens, agent_version })
+    Ok(Plan { files, skipped, left_out, instructions, skills, outside_skills, personal, cleaned, messages, tokens, agent_version })
+}
+
+/// The skill folder a path points into, if any: `…/skills/<name>/SKILL.md`, or the folder itself.
+fn skill_dir(p: &Path) -> Option<PathBuf> {
+    let dir = if p.file_name()?.eq_ignore_ascii_case("SKILL.md") { p.parent()? } else { p };
+    let in_skills = dir.parent()?.file_name().is_some_and(|n| n == "skills");
+    (in_skills && dir.join("SKILL.md").is_file()).then(|| dir.to_path_buf())
+}
+
+/// Skill folders Claude Code announced when it loaded them ("Base directory for this skill: …").
+fn skills_announced(v: &Value, found: &mut BTreeSet<PathBuf>) {
+    match v {
+        Value::String(s) => {
+            for (_, rest) in s.match_indices("Base directory for this skill: ").map(|(i, m)| (i, &s[i + m.len()..])) {
+                let dir = rest.lines().next().unwrap_or("").trim();
+                found.extend(skill_dir(Path::new(dir)));
+            }
+        }
+        Value::Array(items) => items.iter().for_each(|x| skills_announced(x, found)),
+        Value::Object(map) => map.values().for_each(|x| skills_announced(x, found)),
+        _ => {}
+    }
+}
+
+/// Notes the skill folders a tool call or attachment used (Claude Code logs "Base directory
+/// for this skill: …"; Codex reads the `SKILL.md`).
+fn note_skills(t: &Touch, home: &Path, found: &mut BTreeSet<PathBuf>) {
+    let named = t.inputs.iter().flat_map(|s| session::paths_in(s, &t.cwd, home));
+    found.extend(t.file.iter().cloned().chain(named).filter_map(|p| skill_dir(&p)));
 }
 
 /// Secret values in a withheld call's text, and in the file it read (as it is on disk).
@@ -746,6 +823,7 @@ fn list<T: AsRef<str>>(items: &[T]) -> String {
 
 const COMMAND: &str = "command";
 const CONNECTED: &str = "connected tool";
+const CONTEXT: &str = "context note";
 
 /// A withholding reason in two or three words.
 fn brief(why: &str) -> &str {
@@ -791,8 +869,7 @@ fn print_plan(p: &Plan, filters: &Filters, doing: &str) {
     let items: Vec<String> = order
         .into_iter()
         .map(|((why, what), n)| match what.as_str() {
-            COMMAND | CONNECTED if *n > 1 => format!("{n} {what}s ({why})"),
-            COMMAND | CONNECTED => format!("1 {what} ({why})"),
+            COMMAND | CONNECTED | CONTEXT => format!("{} ({why})", count(*n, what)),
             _ => format!("{} ({why})", short(what, 60)),
         })
         .collect();
@@ -808,6 +885,10 @@ fn print_plan(p: &Plan, filters: &Filters, doing: &str) {
             let counts: Vec<String> = by_why.iter().map(|(why, k)| format!("{k} {why}")).collect();
             println!("  ✗ left out {total}: {} · d lists them", counts.join(", "));
         }
+    }
+    if !p.outside_skills.is_empty() {
+        let state = if filters.on(Filter::PersonalSkills) { "not included" } else { "included" };
+        println!("  · skills this chat used from your own setup: {} ({state})", list(&p.outside_skills));
     }
     let redacted: Vec<String> = p.files.values().filter(|f| f.redacted > 0).map(|f| f.rel.display().to_string()).collect();
     if !redacted.is_empty() {
@@ -1030,6 +1111,20 @@ fn share(session: Option<String>, agent: Option<Agent>, dest: Dest, mut filters:
         let question = format!("Include {} over 10 MB ({}: {})? They're still checked for secrets. [y/N]", count(large.len(), "file"), size(total), list(&names));
         if matches!(ask(&question)?.as_str(), "y" | "yes") {
             filters.toggle(Filter::LargeFiles);
+            p = plan(agent, &path, &cwd, &root, &home, &identity, &filters)?;
+            print_plan(&p, &filters, doing);
+        }
+    }
+    // Skills from the sender's own setup: ask, like large files.
+    if !yes && !p.outside_skills.is_empty() && filters.on(Filter::PersonalSkills) {
+        let question = format!(
+            "This chat used {} from your own setup ({}). Include {}? They're checked for secrets. [y/N]",
+            count(p.outside_skills.len(), "skill"),
+            list(&p.outside_skills),
+            if p.outside_skills.len() == 1 { "it" } else { "them" }
+        );
+        if matches!(ask(&question)?.as_str(), "y" | "yes") {
+            filters.toggle(Filter::PersonalSkills);
             p = plan(agent, &path, &cwd, &root, &home, &identity, &filters)?;
             print_plan(&p, &filters, doing);
         }
@@ -1304,8 +1399,21 @@ fn open_pod(data: &[u8], key: &str, into: Option<PathBuf>, target: Option<Agent>
     let written = pod.files.iter().try_for_each(|(rel, bytes)| {
         let path = dir.join(rel);
         fs::create_dir_all(path.parent().unwrap())?;
-        if rel.starts_with(".claude/skills") {
-            fs::write(&path, without_tool_grants(bytes))
+        if rel.starts_with(".claude/skills") || rel.starts_with(".agents/skills") {
+            fs::write(&path, without_tool_grants(bytes))?;
+            // Each agent loads skills from its own folder: put a copy where this one looks.
+            let (from, to) = match agent {
+                Agent::Codex => (".claude/skills", ".agents/skills"),
+                Agent::ClaudeCode => (".agents/skills", ".claude/skills"),
+            };
+            if let Ok(inner) = rel.strip_prefix(from) {
+                let copy = dir.join(to).join(inner);
+                if !copy.exists() {
+                    fs::create_dir_all(copy.parent().unwrap())?;
+                    fs::write(&copy, without_tool_grants(bytes))?;
+                }
+            }
+            Ok(())
         } else {
             fs::write(&path, bytes)
         }

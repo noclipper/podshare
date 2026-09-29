@@ -353,3 +353,52 @@ fn a_taken_folder_gets_a_new_name_instead_of_failing() {
     assert!(friend.join("app-2/src/main.rs").is_file(), "{out}");
     assert_eq!(fs::read_to_string(friend.join("app/mine.txt")).unwrap(), "theirs\n");
 }
+
+#[test]
+fn skills_the_chat_used_go_along_only_if_the_sender_agrees() {
+    let sb = Sandbox::new("skills-used");
+    let project = sb.project("app", "src/main.rs", "fn main() {}\n");
+    let skill = sb.home.join(".claude/skills/deploy");
+    fs::create_dir_all(skill.join("scripts")).unwrap();
+    fs::write(skill.join("SKILL.md"), "---\nname: deploy\ndescription: ships it\nallowed-tools: Bash\n---\nRun scripts/ship.sh.\n").unwrap();
+    fs::write(skill.join("scripts/ship.sh"), "echo shipping\n").unwrap();
+    fs::write(skill.join("scripts/keys.txt"), "AKIAIOSFODNN7EXAMPLF\n").unwrap();
+    claude_chat(&sb, &project, &["src/main.rs"], "ok");
+    // Claude Code announces a loaded skill in a hidden message.
+    let session = sb.home.join(".claude/projects").join(encode(&project)).join(format!("{CLAUDE_ID}.jsonl"));
+    let mut body = fs::read_to_string(&session).unwrap();
+    body += &json!({ "type": "user", "isMeta": true, "uuid": "sk", "cwd": project.to_string_lossy(), "sessionId": CLAUDE_ID,
+        "message": { "role": "user", "content": [{ "type": "text", "text": format!("Base directory for this skill: {}\n\nRun scripts/ship.sh.", skill.display()) }] } }).to_string();
+    body.push('\n');
+    fs::write(&session, body).unwrap();
+
+    let plan = sb.run(&project, &["pack", "--yes", "--dry-run", "--agent", "claude-code"]);
+    assert!(plan.contains("from your own setup: deploy (not included)"), "{plan}");
+    assert!(!plan.contains("+ .claude/skills/deploy") && !plan.contains("+ .claude\\skills\\deploy"), "{plan}");
+
+    let pod = sb.root.join("s.pod");
+    let packed = sb.run(&project, &["pack", "--yes", "--agent", "claude-code", "--allow", "personal-skills", "-o", pod.to_str().unwrap()]);
+    let line = packed.lines().find_map(|l| l.trim().strip_prefix("podshare open ")).unwrap().trim_matches('\'').to_string();
+    let friend = sb.root.join("friend");
+    fs::create_dir_all(&friend).unwrap();
+    sb.run(&friend, &["open", &line, "--yes", "--no-launch", "--agent", "codex"]);
+    let got = friend.join("app");
+    for dir in [".claude/skills/deploy", ".agents/skills/deploy"] {
+        let md = fs::read_to_string(got.join(dir).join("SKILL.md")).unwrap_or_else(|_| panic!("{dir} missing"));
+        assert!(md.contains("Run scripts/ship.sh") && !md.contains("allowed-tools"), "{md}");
+    }
+    assert!(got.join(".claude/skills/deploy/scripts/ship.sh").is_file());
+    assert!(!got.join(".claude/skills/deploy/scripts/keys.txt").exists(), "a file with a key was sent");
+}
+
+#[test]
+fn codex_project_skills_travel_and_land_where_claude_looks() {
+    let sb = Sandbox::new("agents-skills");
+    let project = sb.project("cx", "src/a.js", "let a = 1;\n");
+    fs::create_dir_all(project.join(".agents/skills/lint")).unwrap();
+    fs::write(project.join(".agents/skills/lint/SKILL.md"), "---\nname: lint\ndescription: lints\n---\nRun the linter.\n").unwrap();
+    codex_session(&sb, &project, "src/a.js");
+    let got = sb.share(&project, "codex", "friend", Some("claude-code"));
+    assert!(got.join(".agents/skills/lint/SKILL.md").is_file());
+    assert!(fs::read_to_string(got.join(".claude/skills/lint/SKILL.md")).unwrap().contains("Run the linter."));
+}

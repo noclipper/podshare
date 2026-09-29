@@ -181,7 +181,7 @@ footer a { color: var(--muted); }
     <div class="hero">
       <div style="display:grid; gap:20px">
         <h1>Hand off your agent session. Mid-task.</h1>
-        <p class="lede">Send a Claude Code or Codex chat to someone else, with just the files that chat used, not your whole project. Secrets are removed first. They pick up where you stopped.</p>
+        <p class="lede">Send a Claude Code or Codex chat to someone else, with just the files and skills that chat used, not your whole project. Secrets are removed first. They pick up where you stopped.</p>
         <div class="cta">
           <a class="btn primary" href="#install">Install podshare</a>
           <a class="btn" href="https://github.com/noclipper/podshare">GitHub</a>
@@ -247,7 +247,7 @@ Start Claude Code there now? <span class="p">[Y/n]</span> y <span class="caret" 
       <div class="two">
         <ul class="plain">
           <li><b>You send.</b> In the folder you used the agent in, run <code>podshare send</code> and pick the chat. Or ask for it inside Claude Code (<code>/podshare:share</code>) or Codex, with the plugin.</li>
-          <li><b>Only what the chat used.</b> podshare sends the files the chat read or changed, plus setup files like <code>package.json</code>. Not your whole project. You see the list and can untick anything.</li>
+          <li><b>Only what the chat used.</b> podshare sends the files the chat read or changed, plus setup files like <code>package.json</code> and the skills it used. Not your whole project. You see the list and can untick anything.</li>
           <li><b>They receive.</b> They run <code>podshare receive</code> with your code anywhere, see what's coming and its token cost, and accept. It unpacks into a new folder there, and their agent opens with your chat.</li>
           <li><b>It's safe to open.</b> The agent starts in plan or read-only mode, so it can read the files but changes nothing until they approve.</li>
         </ul>
@@ -370,6 +370,7 @@ codex plugin add podshare@podshare</pre>
       <div class="faq">
         <div><h3>Does my code go to a server?</h3><p>Not in any form anyone can read. It's encrypted end to end and goes directly when it can, otherwise through a public relay that can't read it.</p></div>
         <div><h3>Is my whole project sent?</h3><p>No. Only the files the session used, plus setup files like <code>package.json</code>.</p></div>
+        <div><h3>Do skills come along?</h3><p>Yes. The project's skills always do. Skills from your own setup or a plugin go only if you say yes. They land where the other person's agent looks, Claude Code or Codex.</p></div>
         <div><h3>Do we both need to be online?</h3><p>To send by code, yes. Otherwise <code>podshare pack</code> makes a file you can send later.</p></div>
         <div><h3>Any size limits?</h3><p>Files over 10 MB are left out unless you say so; podshare asks. A pod can be up to 2 GB.</p></div>
         <div><h3>What's next?</h3><p>Gemini CLI, send-later links that work when they're offline, and big files sent as a link to your git repo.</p></div>
