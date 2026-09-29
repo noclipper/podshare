@@ -1,6 +1,9 @@
 {
   "name": "podshare",
-  "owner": { "name": "noclipper" },
+  "description": "podshare: send your Claude Code or Codex chat to a teammate, with just the files it used.",
+  "owner": {
+    "name": "noclipper"
+  },
   "plugins": [
     {
       "name": "podshare",
