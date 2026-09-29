@@ -456,6 +456,24 @@ pub fn to_neutral(lines: &[Value]) -> Vec<Value> {
 
 /// Roughly how many tokens Codex reads when it resumes this cleaned transcript: the
 /// records the model sees (not the display events), from the last compaction on.
+/// MCP servers the chat called (or tried to): `McpToolCall` items, and the older
+/// `mcp_tool_call_*` events.
+pub fn mcp_servers(lines: &[Value]) -> Vec<String> {
+    lines
+        .iter()
+        .filter(|l| l["type"] == "event_msg")
+        .filter_map(|l| {
+            let p = &l["payload"];
+            match p["type"].as_str() {
+                Some("item_completed") if p["item"]["type"] == "McpToolCall" => p["item"]["server"].as_str(),
+                Some(t) if t.starts_with("mcp_tool_call") => p["invocation"]["server"].as_str(),
+                _ => None,
+            }
+        })
+        .map(String::from)
+        .collect()
+}
+
 pub fn estimate_tokens(lines: &[Value]) -> usize {
     let start = lines.iter().rposition(|l| l["type"] == "compacted").unwrap_or(0);
     let mut images = 0;
@@ -603,6 +621,16 @@ pub fn resume_command(id: &str) -> (&'static str, Vec<&str>) {
 mod tests {
     use super::*;
     use std::time::UNIX_EPOCH;
+
+    #[test]
+    fn names_the_mcp_servers_it_called() {
+        let lines = vec![
+            event(json!({"type": "McpToolCall", "server": "dice", "tool": "roll", "status": "failed"})),
+            json!({"type": "event_msg", "payload": {"type": "mcp_tool_call_end", "invocation": {"server": "github", "tool": "x"}}}),
+            event(json!({"type": "CommandExecution", "command": ["sh", "-lc", "ls"]})),
+        ];
+        assert_eq!(mcp_servers(&lines), ["dice", "github"]);
+    }
 
     #[test]
     fn starts_from_the_last_compaction() {

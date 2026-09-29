@@ -1,6 +1,6 @@
 {
   "name": "podshare",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Share this chat, with the files it used, as an encrypted pod a teammate can resume in Codex or Claude Code, with secrets filtered out first.",
   "author": { "name": "noclipper" },
   "homepage": "https://noclipper.github.io/podshare/",

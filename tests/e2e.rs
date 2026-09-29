@@ -403,3 +403,25 @@ fn codex_project_skills_travel_and_land_where_claude_looks() {
     assert!(got.join(".agents/skills/lint/SKILL.md").is_file());
     assert!(fs::read_to_string(got.join(".claude/skills/lint/SKILL.md")).unwrap().contains("Run the linter."));
 }
+
+#[test]
+fn the_receiver_hears_which_connected_tools_the_chat_used() {
+    let sb = Sandbox::new("mcp");
+    let project = sb.project("app", "src/main.rs", "fn main() {}\n");
+    claude_chat(&sb, &project, &["src/main.rs"], "ok");
+    let session = sb.home.join(".claude/projects").join(encode(&project)).join(format!("{CLAUDE_ID}.jsonl"));
+    let mut body = fs::read_to_string(&session).unwrap();
+    body += &json!({ "type": "assistant", "uuid": "m1", "cwd": project.to_string_lossy(), "sessionId": CLAUDE_ID,
+        "message": { "role": "assistant", "content": [{ "type": "tool_use", "id": "tm", "name": "mcp__github__search", "input": { "q": "x" } }] } }).to_string();
+    body.push('\n');
+    fs::write(&session, body).unwrap();
+    let pod = sb.root.join("m.pod");
+    let packed = sb.run(&project, &["pack", "--yes", "--agent", "claude-code", "-o", pod.to_str().unwrap()]);
+    assert!(packed.contains("connected tools (MCP) this chat used: github"), "{packed}");
+    let line = packed.lines().find_map(|l| l.trim().strip_prefix("podshare open ")).unwrap().trim_matches('\'').to_string();
+    let friend = sb.root.join("friend");
+    fs::create_dir_all(&friend).unwrap();
+    let opened = sb.run(&friend, &["open", &line, "--yes", "--no-launch"]);
+    assert!(opened.contains("connected tools (MCP) that don't come along: github"), "{opened}");
+    assert!(opened.contains("may not be set up here: github"), "resume note: {opened}");
+}

@@ -569,6 +569,8 @@ struct Plan {
     skills: Vec<PathBuf>,
     /// Names of skills the chat used from outside the project.
     outside_skills: Vec<String>,
+    /// MCP servers the chat used. Only the names travel, so the receiver knows what's missing.
+    mcp: Vec<String>,
     /// Shared files that mention the sender's home folder, identity or an email.
     /// They are shared as-is: rewriting someone's code would break it.
     personal: Vec<PathBuf>,
@@ -754,6 +756,7 @@ fn plan(agent: Agent, path: &Path, cwd: &Path, root: &Path, home: &Path, identit
     let mut echoes: Vec<String> = echoes.into_iter().collect();
     echoes.sort_by_key(|e| std::cmp::Reverse(e.len()));
     let agent_version = agent.version(&lines);
+    let mcp = agent.mcp_servers(&lines);
     let cleaned = agent.clean(lines, &withhold, root, home, identity, &echoes, filters);
     let neutral = agent.to_neutral(&cleaned.lines);
     let messages = neutral.iter().filter(|l| l["type"] == "text").count();
@@ -768,7 +771,7 @@ fn plan(agent: Agent, path: &Path, cwd: &Path, root: &Path, home: &Path, identit
             left_out.entry((brief(why).to_string(), what.clone())).or_insert(1);
         }
     }
-    Ok(Plan { files, skipped, left_out, instructions, skills, outside_skills, personal, cleaned, messages, tokens, agent_version })
+    Ok(Plan { files, skipped, left_out, instructions, skills, outside_skills, mcp, personal, cleaned, messages, tokens, agent_version })
 }
 
 /// The skill folder a path points into, if any: `…/skills/<name>/SKILL.md`, or the folder itself.
@@ -887,7 +890,8 @@ fn print_plan(p: &Plan, filters: &Filters, doing: &str) {
     let items: Vec<String> = order
         .into_iter()
         .map(|((why, what), n)| match what.as_str() {
-            COMMAND | CONNECTED | CONTEXT => format!("{} ({why})", count(*n, what)),
+            CONNECTED => count(*n, "connected tool result"),
+            COMMAND | CONTEXT => format!("{} ({why})", count(*n, what)),
             _ => format!("{} ({why})", short(what, 60)),
         })
         .collect();
@@ -907,6 +911,9 @@ fn print_plan(p: &Plan, filters: &Filters, doing: &str) {
     if !p.outside_skills.is_empty() {
         let state = if filters.no_skills { "left out: --no-skills" } else { "included; c to untick" };
         println!("  ✓ skills this chat used from your own setup: {} ({state})", list(&p.outside_skills));
+    }
+    if !p.mcp.is_empty() {
+        println!("  · connected tools (MCP) this chat used: {}. Their names go along, not their setup or logins", list(&p.mcp));
     }
     let redacted: Vec<String> = p.files.values().filter(|f| f.redacted > 0).map(|f| f.rel.display().to_string()).collect();
     if !redacted.is_empty() {
@@ -1169,6 +1176,7 @@ fn share(session: Option<String>, agent: Option<Agent>, dest: Dest, mut filters:
         "instructions": p.instructions.iter().map(|r| portable(r)).collect::<Vec<_>>(),
         "skills": p.skills.iter().map(|r| portable(r)).collect::<Vec<_>>(),
         "filters_off": filters.off(),
+        "mcp_servers": p.mcp,
         "files_left_out_by_sender": filters.excluded.len(),
     });
     let transcript = p.cleaned.lines.iter().map(|l| l.to_string() + "\n").collect::<String>().into_bytes();
@@ -1375,6 +1383,25 @@ fn open_pod(data: &[u8], key: &str, into: Option<PathBuf>, target: Option<Agent>
         println!("  These files steer the agent. Read them if you don't trust the sender:");
         steering.iter().for_each(|p| println!("    {p}"));
     }
+    // Only names, cleaned: the sender's text shouldn't be able to say anything else here.
+    let mcp: Vec<String> = listed("mcp_servers")
+        .into_iter()
+        .map(|n| n.chars().filter(|c| c.is_ascii_alphanumeric() || "_-.".contains(*c)).take(60).collect::<String>())
+        .filter(|n| !n.is_empty())
+        .collect();
+    if !mcp.is_empty() {
+        println!("  The chat also used connected tools (MCP) that don't come along: {}.", mcp.join(", "));
+        println!("  Set them up here if you want the agent to use them.");
+    }
+    let note = if mcp.is_empty() {
+        RESUME_NOTE.to_string()
+    } else {
+        format!(
+            "{RESUME_NOTE} The sender's agent also had these connected tools (MCP), which may not be set up here: {}. \
+             If a step needs one that isn't available, say so rather than guessing its result.",
+            mcp.join(", ")
+        )
+    };
     let off = listed("filters_off");
     if !off.is_empty() {
         println!("  ⚠ The sender turned off these safety filters: {}", off.join(", "));
@@ -1396,9 +1423,9 @@ fn open_pod(data: &[u8], key: &str, into: Option<PathBuf>, target: Option<Agent>
             session::replace_strings(&mut v, session::ROOT, &dir.to_string_lossy());
             neutral.push(v);
         }
-        agent.from_turns(&convert::turns(&neutral, source.label()), &dir, RESUME_NOTE)
+        agent.from_turns(&convert::turns(&neutral, source.label()), &dir, &note)
     } else {
-        agent.prepare(&pod.transcript, &dir, RESUME_NOTE)?
+        agent.prepare(&pod.transcript, &dir, &note)?
     };
     let written = pod.files.iter().try_for_each(|(rel, bytes)| {
         let path = dir.join(rel);
@@ -1435,7 +1462,7 @@ fn open_pod(data: &[u8], key: &str, into: Option<PathBuf>, target: Option<Agent>
     agent.install(&dir, &id, &transcript)?;
     println!("✓ unpacked into {}", dir.display());
 
-    let (program, args) = agent.resume_command(&id, RESUME_NOTE);
+    let (program, args) = agent.resume_command(&id, &note);
     let quoted: Vec<String> = args.iter().map(|a| shell_quote(a)).collect();
     let then = if cfg!(windows) { ";" } else { " &&" };
     let resume = format!("cd {}{then} {program} {}", shell_quote(&dir.to_string_lossy()), quoted.join(" "));

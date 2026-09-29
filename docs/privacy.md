@@ -44,7 +44,8 @@ The person you send to is told if you switched any off.
 ## Things that are never sent
 
 Agent settings and hooks (`.claude`, `.codex`, `.gemini`, `.cursor` and similar), MCP
-server configs, `.envrc`, `.git`, and editor config that could run code. podshare refuses
+server configs (only the names of the MCP servers the chat used go along, so the receiver
+knows what to set up), `.envrc`, `.git`, and editor config that could run code. podshare refuses
 to open a pod that contains them. Skills are shared, but a received skill can't
 pre-approve tools (`allowed-tools` is removed).
 

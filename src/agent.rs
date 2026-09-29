@@ -114,6 +114,23 @@ impl Agent {
     }
 
     /// Roughly how many tokens the agent reads when it resumes this cleaned transcript.
+    /// The MCP servers (connected tools) the chat called. Only their names: their setup
+    /// runs programs and holds logins, so it never travels.
+    pub fn mcp_servers(self, lines: &[Value]) -> Vec<String> {
+        let names = match self {
+            Agent::ClaudeCode => claude_code::mcp_servers(lines),
+            Agent::Codex => codex::mcp_servers(lines),
+        };
+        let mut names: Vec<String> = names
+            .into_iter()
+            .map(|n| n.chars().filter(|c| c.is_ascii_alphanumeric() || "_-.".contains(*c)).take(60).collect::<String>())
+            .filter(|n| !n.is_empty())
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    }
+
     pub fn estimate_tokens(self, lines: &[Value]) -> usize {
         match self {
             Agent::ClaudeCode => claude_code::estimate_tokens(lines),

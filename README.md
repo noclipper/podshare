@@ -114,6 +114,9 @@ The code works only once, and everything is encrypted end to end.
   and ones from your own setup or a plugin (leave those out with `--no-skills`). They land
   where the other person's agent looks, whichever agent that is. A received skill can't
   pre-approve tools.
+- Connected tools (MCP servers, like GitHub or a browser) don't travel: their setup runs
+  programs and holds your logins. Their names do, so the other person sees which ones the
+  chat used and can set up their own, and their agent knows not to guess what they'd return.
 - The person you send to starts safely (plan mode in Claude Code, read-only in Codex),
   so it can read the files but changes nothing until they approve.
 - `--yes` skips the questions and sends your most recent chat.

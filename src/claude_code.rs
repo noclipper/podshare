@@ -432,6 +432,16 @@ pub fn prepare(transcript: &[u8], dir: &Path) -> Result<(String, String)> {
 /// Roughly how many tokens Claude reads when it resumes this cleaned transcript: messages,
 /// tool calls and results, and the context entries Claude Code attached, from the last
 /// compaction on.
+/// MCP servers the chat called: tool names look like `mcp__<server>__<tool>`.
+pub fn mcp_servers(lines: &[Value]) -> Vec<String> {
+    lines
+        .iter()
+        .flat_map(blocks)
+        .filter(|b| b["type"] == "tool_use")
+        .filter_map(|b| b["name"].as_str()?.strip_prefix("mcp__")?.split("__").next().map(String::from))
+        .collect()
+}
+
 pub fn estimate_tokens(lines: &[Value]) -> usize {
     let start = lines.iter().rposition(|l| l["isCompactSummary"] == true).unwrap_or(0);
     let mut images = 0;
@@ -508,6 +518,16 @@ mod tests {
         let identity = vec![("me".to_string(), "user"), ("Alice Smith".to_string(), "[name]")];
         let echoes = vec!["hunter2Zebra99".to_string()];
         clean(lines, &withhold, Path::new("/Users/me/proj"), Path::new("/Users/me"), &identity, &echoes, &filters)
+    }
+
+    #[test]
+    fn names_the_mcp_servers_it_called_not_the_ones_it_was_offered() {
+        let lines = vec![
+            json!({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "a", "name": "mcp__dice__roll", "input": {}}]}}),
+            json!({"type": "attachment", "attachment": {"type": "deferred_tools", "content": "mcp__claude_ai_Gmail__search"}}),
+            json!({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "b", "name": "Bash", "input": {"command": "ls"}}]}}),
+        ];
+        assert_eq!(mcp_servers(&lines), ["dice"]);
     }
 
     #[test]
