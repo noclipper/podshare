@@ -1,0 +1,11 @@
+{
+  "name": "podshare",
+  "owner": { "name": "noclipper" },
+  "plugins": [
+    {
+      "name": "podshare",
+      "source": "./",
+      "description": "Share this chat, with the files it used, as an encrypted pod a teammate can resume in Claude Code or Codex."
+    }
+  ]
+}

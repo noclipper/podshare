@@ -1,0 +1,24 @@
+{
+  "name": "podshare",
+  "version": "0.4.5",
+  "description": "Share this chat, with the files it used, as an encrypted pod a teammate can resume in Codex or Claude Code, with secrets filtered out first.",
+  "author": { "name": "noclipper" },
+  "homepage": "https://noclipper.github.io/podshare/",
+  "repository": "https://github.com/noclipper/podshare",
+  "license": "FSL-1.1-ALv2",
+  "keywords": ["share", "handoff", "session", "encrypted", "claude code"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "podshare",
+    "shortDescription": "Hand off this chat to a teammate",
+    "longDescription": "Send this chat, with just the files it used, to a teammate over an encrypted one-time code. Secrets and personal details are filtered first. They can continue in Codex or Claude Code.",
+    "developerName": "noclipper",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read"],
+    "websiteURL": "https://noclipper.github.io/podshare/",
+    "defaultPrompt": ["Share this chat with a teammate", "Receive a podshare code"],
+    "brandColor": "#2B4FE0",
+    "composerIcon": "./assets/podshare.svg",
+    "logo": "./assets/podshare.svg"
+  }
+}

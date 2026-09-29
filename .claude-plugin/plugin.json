@@ -1,0 +1,11 @@
+{
+  "name": "podshare",
+  "description": "Share this session, with the files it used, as an encrypted pod someone else can resume — with secrets and personal data filtered out first.",
+  "version": "0.4.5",
+  "author": {
+    "name": "noclipper"
+  },
+  "homepage": "https://github.com/noclipper/podshare",
+  "repository": "https://github.com/noclipper/podshare",
+  "license": "FSL-1.1-ALv2"
+}

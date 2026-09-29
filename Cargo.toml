@@ -1,0 +1,32 @@
+[package]
+name = "podshare"
+version = "0.4.5"
+edition = "2021"
+license = "FSL-1.1-ALv2"
+repository = "https://github.com/noclipper/podshare"
+homepage = "https://github.com/noclipper/podshare"
+readme = "README.md"
+keywords = ["claude-code", "ai-agents", "session", "share", "wormhole"]
+categories = ["command-line-utilities"]
+description = "Share a coding-agent session, with its files, as an encrypted pod someone else can resume"
+
+[dependencies]
+anyhow = "1"
+async-io = "2.6.0"
+base64 = "0.22"
+chacha20poly1305 = "0.10"
+clap = { version = "4", features = ["derive"] }
+dialoguer = "0.11"
+dunce = "1.0.5"
+futures = "0.3.34"
+magic-wormhole = { version = "0.8", features = ["transfer"] }
+regex = "1"
+serde_json = "1"
+tar = "0.4"
+uuid = { version = "1", features = ["v4", "v7"] }
+zstd = "0.13"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
